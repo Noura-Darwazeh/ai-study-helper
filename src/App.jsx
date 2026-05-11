@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
+import { ThemeProvider } from './ThemeContext';
+import { useTheme } from './useTheme';
+import { ThemeToggle } from './ThemeToggle';
 
 /* ── Read API key from environment variable ── */
 const API_KEY = import.meta.env.VITE_GROQ_API_KEY || "";
@@ -53,56 +56,20 @@ const MODES = [
 ];
 
 /* ═══════════════════════════════════════════════════════════
-   Floating particles background
+   Custom hook for analysis
    ═══════════════════════════════════════════════════════════ */
-function Particles() {
-  const particles = Array.from({ length: 18 }, (_, i) => {
-    const size = Math.random() * 3 + 1.5;
-    const colors = [
-      "rgba(168,85,247,0.25)",
-      "rgba(99,102,241,0.2)",
-      "rgba(34,211,238,0.18)",
-      "rgba(52,211,153,0.15)",
-    ];
-    return (
-      <div
-        key={i}
-        className="particle"
-        style={{
-          width: size,
-          height: size,
-          left: `${Math.random() * 100}%`,
-          background: colors[i % colors.length],
-          boxShadow: `0 0 ${size * 3}px ${colors[i % colors.length]}`,
-          animationDuration: `${Math.random() * 18 + 14}s`,
-          animationDelay: `${Math.random() * 12}s`,
-        }}
-      />
-    );
-  });
-  return <div className="particles">{particles}</div>;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Main App
-   ═══════════════════════════════════════════════════════════ */
-export default function App() {
-  const [text, setText] = useState("");
-  const [mode, setMode] = useState("summary");
+function useAnalysis() {
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  const textareaRef = useRef(null);
 
-  /* ── Call Groq API (free, fast, 30 req/min) ── */
-  const handleAnalyze = useCallback(async () => {
+  const analyzeText = useCallback(async (text, mode) => {
     if (!API_KEY || API_KEY === "paste-your-groq-key-here") {
       setError("API key not configured. Get your FREE key from https://console.groq.com/keys and add it to the .env file.");
       return;
     }
     if (!text.trim()) {
-      setError("Please paste some text to analyze.");
+      setError("Please enter some text to analyze.");
       return;
     }
 
@@ -145,7 +112,131 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [text, mode]);
+  }, []);
+
+  return { result, loading, error, analyzeText, setError };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Floating particles background
+   ═══════════════════════════════════════════════════════════ */
+function Particles() {
+  const { theme } = useTheme();
+
+  const [particles] = useState(() => {
+    return Array.from({ length: 18 }, (_, i) => {
+      const colors = theme === 'dark' ? [
+        "rgba(168,85,247,0.25)",
+        "rgba(99,102,241,0.2)",
+        "rgba(34,211,238,0.18)",
+        "rgba(52,211,153,0.15)",
+      ] : [
+        "rgba(124,58,237,0.15)",
+        "rgba(79,70,229,0.12)",
+        "rgba(8,145,178,0.1)",
+        "rgba(5,150,105,0.08)",
+      ];
+
+      return {
+        id: i,
+        size: Math.random() * 3 + 1.5,
+        left: Math.random() * 100,
+        color: colors[i % colors.length],
+        duration: Math.random() * 18 + 14,
+        delay: Math.random() * 12,
+      };
+    });
+  });
+
+  // Update colors when theme changes
+  const currentColors = theme === 'dark' ? [
+    "rgba(168,85,247,0.25)",
+    "rgba(99,102,241,0.2)",
+    "rgba(34,211,238,0.18)",
+    "rgba(52,211,153,0.15)",
+  ] : [
+    "rgba(124,58,237,0.15)",
+    "rgba(79,70,229,0.12)",
+    "rgba(8,145,178,0.1)",
+    "rgba(5,150,105,0.08)",
+  ];
+
+  return (
+    <div className="particles">
+      {particles.map((particle) => (
+        <div
+          key={particle.id}
+          className="particle"
+          style={{
+            width: particle.size,
+            height: particle.size,
+            left: `${particle.left}%`,
+            background: currentColors[particle.id % currentColors.length],
+            boxShadow: `0 0 ${particle.size * 3}px ${currentColors[particle.id % currentColors.length]}`,
+            animationDuration: `${particle.duration}s`,
+            animationDelay: `${particle.delay}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Structured Quiz Component
+   ═══════════════════════════════════════════════════════════ */
+function QuizDisplay({ content }) {
+  // Simple parsing for quiz format
+  const lines = content.split('\n').filter(line => line.trim());
+  const questions = [];
+  let currentQuestion = null;
+
+  lines.forEach(line => {
+    if (line.match(/^\d+\./)) {
+      if (currentQuestion) questions.push(currentQuestion);
+      currentQuestion = { question: line, options: [], explanation: '' };
+    } else if (line.match(/^[A-D]\./) || line.includes('✅')) {
+      if (currentQuestion) currentQuestion.options.push(line);
+    } else if (line.startsWith('Explanation:')) {
+      if (currentQuestion) currentQuestion.explanation = line;
+    }
+  });
+  if (currentQuestion) questions.push(currentQuestion);
+
+  return (
+    <div className="quiz-container">
+      {questions.map((q, idx) => (
+        <div key={idx} className="quiz-question">
+          <h4>{q.question}</h4>
+          <div className="quiz-options">
+            {q.options.map((opt, i) => (
+              <div key={i} className={`quiz-option ${opt.includes('✅') ? 'correct' : ''}`}>
+                {opt}
+              </div>
+            ))}
+          </div>
+          {q.explanation && <p className="quiz-explanation">{q.explanation}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Main App
+   ═══════════════════════════════════════════════════════════ */
+export default function App() {
+  const [text, setText] = useState("");
+  const [mode, setMode] = useState("summary");
+  const [copied, setCopied] = useState(false);
+  const textareaRef = useRef(null);
+
+  const { result, loading, error, analyzeText, setError } = useAnalysis();
+
+  /* ── Handle analyze ── */
+  const handleAnalyze = useCallback(() => {
+    analyzeText(text, mode);
+  }, [text, mode, analyzeText]);
 
   /* ── Copy result ── */
   const handleCopy = useCallback(() => {
@@ -167,14 +258,24 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [handleAnalyze]);
 
+  /* ── Auto-resize textarea ── */
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, [text]);
+
   const charCount = text.length;
   const currentMode = MODES.find((m) => m.id === mode);
 
   return (
-    <>
+    <ThemeProvider>
       <Particles />
 
       <div className="app-container">
+        <ThemeToggle />
+
         {/* ─── Header ─── */}
         <header className="app-header">
           <div className="header-badge">
@@ -188,10 +289,10 @@ export default function App() {
           </p>
         </header>
 
-        {/* ─── Main Grid ─── */}
-        <div className="main-grid">
-          {/* ── Left: Input panel ── */}
-          <div className="glass-panel" id="input-panel">
+        {/* ─── Main Card ─── */}
+        <div className="main-card">
+          {/* ── Input Section ── */}
+          <div className="input-section">
             <div className="panel-header">
               <span className="panel-label">
                 <span className="icon">📄</span>
@@ -252,8 +353,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* ── Right: Result panel ── */}
-          <div className="glass-panel" id="result-panel">
+          {/* ── Result Section ── */}
+          <div className="result-section">
             <div className="panel-header">
               <span className="panel-label">
                 <span className="icon">🤖</span>
@@ -279,7 +380,16 @@ export default function App() {
             {error && (
               <div className="error-box" id="error-box">
                 <span className="err-icon">⚠️</span>
-                <span>{error}</span>
+                <div className="error-content">
+                  <span>{error}</span>
+                  <button
+                    className="retry-btn"
+                    onClick={() => setError("")}
+                    title="Dismiss error"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             )}
 
@@ -298,7 +408,11 @@ export default function App() {
             {/* Result */}
             {!loading && result && (
               <div className="result-content" id="result-content">
-                <div className="result-text">{result}</div>
+                {mode === 'quiz' ? (
+                  <QuizDisplay content={result} />
+                ) : (
+                  <div className="result-text">{result}</div>
+                )}
               </div>
             )}
 
@@ -308,7 +422,7 @@ export default function App() {
                 <div className="empty-icon">🧠</div>
                 <p className="empty-title">Results will appear here</p>
                 <p className="empty-hint">
-                  Paste text on the left, choose a mode, and hit Analyze.
+                  Paste text above, choose a mode, and hit Analyze.
                 </p>
               </div>
             )}
@@ -320,6 +434,6 @@ export default function App() {
           Built with React & Groq AI · AI Study Helper
         </footer>
       </div>
-    </>
+    </ThemeProvider>
   );
 }
